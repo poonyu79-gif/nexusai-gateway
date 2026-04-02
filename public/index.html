@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexusAI Gateway — Premium AI API Access</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+          colors: {
+            brand: { 50:'#f0f9ff', 100:'#e0f2fe', 400:'#38bdf8', 500:'#0ea5e9', 600:'#0284c7', 700:'#0369a1', 900:'#0c4a6e' },
+            surface: { 900:'#0a0f1e', 800:'#0f1629', 700:'#141d35', 600:'#1a2540', 500:'#1e2d4a' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background:#0a0f1e; color:#e2e8f0; font-family:'Inter',sans-serif; }
+    .glass { background:rgba(255,255,255,0.04); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.08); }
+    .glow { box-shadow:0 0 40px rgba(14,165,233,0.15); }
+    .gradient-text { background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .hero-bg { background:radial-gradient(ellipse 80% 60% at 50% -10%, rgba(14,165,233,0.12) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 80%, rgba(129,140,248,0.08) 0%, transparent 60%); }
+    .card-hover { transition:all .2s ease; } .card-hover:hover { transform:translateY(-2px); border-color:rgba(56,189,248,0.3); }
+    .input-dark { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#e2e8f0; border-radius:8px; padding:10px 14px; width:100%; outline:none; transition:border-color .2s; }
+    .input-dark:focus { border-color:#38bdf8; }
+    .btn-primary { background:linear-gradient(135deg,#0ea5e9,#6366f1); color:#fff; border:none; border-radius:8px; padding:10px 24px; font-weight:600; cursor:pointer; transition:opacity .2s; }
+    .btn-primary:hover { opacity:.9; }
+    .btn-ghost { background:transparent; border:1px solid rgba(255,255,255,0.15); color:#94a3b8; border-radius:8px; padding:10px 20px; cursor:pointer; transition:all .2s; }
+    .btn-ghost:hover { border-color:#38bdf8; color:#38bdf8; }
+    .status-badge { display:inline-flex; align-items:center; gap:6px; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2); color:#4ade80; border-radius:20px; padding:4px 12px; font-size:.75rem; }
+    .status-dot { width:6px; height:6px; border-radius:50%; background:#4ade80; animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .tab-active { border-bottom:2px solid #38bdf8; color:#38bdf8; }
+    [x-cloak] { display:none!important; }
+    .copy-btn { cursor:pointer; opacity:.6; transition:opacity .2s; } .copy-btn:hover { opacity:1; }
+    .chain-btn { border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 20px; cursor:pointer; transition:all .2s; background:rgba(255,255,255,0.03); }
+    .chain-btn.selected { border-color:#38bdf8; background:rgba(56,189,248,0.08); color:#38bdf8; }
+  </style>
+</head>
+<body x-data="app()" x-cloak>
+
+<!-- ══════════════════════════ NAVBAR ══════════════════════════════════════ -->
+<nav class="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+  <div class="max-w-7xl mx-auto px-6 flex items-center justify-between h-16">
+    <div class="flex items-center gap-3 cursor-pointer" @click="page='home'">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">N</div>
+      <span class="font-bold text-white">NexusAI</span>
+      <span class="text-slate-500 text-sm hidden sm:block">Gateway</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <template x-if="!user">
+        <div class="flex gap-2">
+          <button class="btn-ghost text-sm py-2 px-4" @click="page='login'">
+            <span x-text="lang==='en'?'Sign In':'登录'"></span>
+          </button>
+          <button class="btn-primary text-sm py-2 px-4" @click="page='register'">
+            <span x-text="lang==='en'?'Get Started':'注册'"></span>
+          </button>
+        </div>
+      </template>
+      <template x-if="user">
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-slate-400 hidden sm:block">
+            <span class="text-brand-400 font-mono" x-text="'$'+balanceFmt(user.balance)"></span>
+            <span x-text="lang==='en'?' balance':' 余额'"></span>
+          </span>
+          <button class="btn-ghost text-sm py-2 px-4" @click="page='dashboard'">
+            <span x-text="lang==='en'?'Dashboard':'控制台'"></span>
+          </button>
+          <button class="btn-ghost text-sm py-2 px-3 text-red-400 border-red-400/20" @click="logout()">
+            <span x-text="lang==='en'?'Logout':'退出'"></span>
+          </button>
+        </div>
+      </template>
+      <button class="ml-2 text-slate-500 hover:text-slate-300 text-xs border border-white/10 rounded px-2 py-1" @click="lang=lang==='en'?'zh':'en'">
+        <span x-text="lang==='en'?'中文':'EN'"></span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════ HOME PAGE ══════════════════════════════════ -->
+<div x-show="page==='home'">
+  <!-- Hero -->
+  <section class="hero-bg min-h-screen flex flex-col items-center justify-center px-6 pt-20 pb-16">
+    <div class="status-badge mb-8">
+      <span class="status-dot"></span>
+      <span x-text="lang==='en'?'All Systems Operational':'服务运行正常'"></span>
+    </div>
+    <h1 class="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-center leading-tight mb-6 max-w-4xl">
+      <span x-text="lang==='en'?'Premium AI API':'高性价比 AI API'"></span>
+      <br><span class="gradient-text" x-text="lang==='en'?'Gateway for Global Developers':'出海中转平台'"></span>
+    </h1>
+    <p class="text-slate-400 text-lg text-center max-w-2xl mb-10 leading-relaxed" x-text="lang==='en'?'Access GPT-4, Claude, Gemini and more with a single API key. OpenAI-compatible. Pay with USDT. Built for global teams.':'统一接入 GPT-4、Claude、Gemini 等主流大模型，兼容 OpenAI 格式，支持 USDT 充值，面向全球开发者。'"></p>
+    <div class="flex flex-wrap gap-4 justify-center">
+      <button class="btn-primary px-8 py-3 text-base" @click="page='register'">
+        <span x-text="lang==='en'?'Start Free →':'免费注册 →'"></span>
+      </button>
+      <button class="btn-ghost px-8 py-3 text-base" @click="page='pricing'">
+        <span x-text="lang==='en'?'View Pricing':'查看定价'"></span>
+      </button>
+    </div>
+
+    <!-- Code snippet -->
+    <div class="mt-16 w-full max-w-2xl glass rounded-xl p-5 glow">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+        <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+        <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+        <span class="ml-2 text-slate-500 text-xs font-mono">quick_start.py</span>
+      </div>
+      <pre class="text-sm font-mono text-slate-300 overflow-x-auto"><code><span class="text-purple-400">from</span> openai <span class="text-purple-400">import</span> OpenAI
+
+client = OpenAI(
+    api_key=<span class="text-green-400">"sk-your-nexusai-key"</span>,
+    base_url=<span class="text-green-400">"https://your-domain.com/v1"</span>
+)
+
+response = client.chat.completions.create(
+    model=<span class="text-green-400">"gpt-4o"</span>,
+    messages=[{<span class="text-green-400">"role"</span>: <span class="text-green-400">"user"</span>, <span class="text-green-400">"content"</span>: <span class="text-green-400">"Hello!"</span>}]
+)
+<span class="text-blue-400">print</span>(response.choices[<span class="text-yellow-400">0</span>].message.content)</code></pre>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="py-24 px-6 max-w-7xl mx-auto">
+    <h2 class="text-3xl font-bold text-center mb-4" x-text="lang==='en'?'Why NexusAI Gateway?':'为什么选择 NexusAI？'"></h2>
+    <p class="text-slate-400 text-center mb-14" x-text="lang==='en'?'Everything you need to build production-ready AI applications.':'构建生产级 AI 应用的一站式解决方案。'"></p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <template x-for="f in features()" :key="f.icon">
+        <div class="glass rounded-xl p-6 card-hover cursor-default">
+          <div class="text-3xl mb-4" x-text="f.icon"></div>
+          <h3 class="font-semibold text-white mb-2" x-text="f.title"></h3>
+          <p class="text-slate-400 text-sm leading-relaxed" x-text="f.desc"></p>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section class="py-16 px-6 border-y border-white/5">
+    <div class="max-w-4xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
+      <div><div class="text-4xl font-bold gradient-text">99.9%</div><div class="text-slate-400 text-sm mt-1" x-text="lang==='en'?'Uptime':'服务可用性'"></div></div>
+      <div><div class="text-4xl font-bold gradient-text">&lt;300ms</div><div class="text-slate-400 text-sm mt-1" x-text="lang==='en'?'Avg Latency':'平均延迟'"></div></div>
+      <div><div class="text-4xl font-bold gradient-text">10+</div><div class="text-slate-400 text-sm mt-1" x-text="lang==='en'?'AI Models':'AI 模型'"></div></div>
+      <div><div class="text-4xl font-bold gradient-text">USDT</div><div class="text-slate-400 text-sm mt-1" x-text="lang==='en'?'Crypto Payment':'加密支付'"></div></div>
+    </div>
+  </section>
+
+  <!-- Pricing preview -->
+  <section class="py-24 px-6 max-w-5xl mx-auto">
+    <h2 class="text-3xl font-bold text-center mb-4" x-text="lang==='en'?'Simple Pricing':'简单透明的定价'"></h2>
+    <p class="text-slate-400 text-center mb-14" x-text="lang==='en'?'Pay only for what you use. Top up with USDT anytime.':'按量计费，随时用 USDT 充值。'"></p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <template x-for="plan in plans()" :key="plan.name">
+        <div class="glass rounded-xl p-7 card-hover flex flex-col" :class="plan.popular?'border-brand-500/40 glow':''">
+          <template x-if="plan.popular">
+            <div class="text-xs text-brand-400 font-semibold mb-3 uppercase tracking-wider" x-text="lang==='en'?'Most Popular':'最受欢迎'"></div>
+          </template>
+          <h3 class="text-xl font-bold text-white mb-1" x-text="plan.name"></h3>
+          <div class="text-3xl font-extrabold gradient-text mt-2 mb-1" x-text="plan.price"></div>
+          <div class="text-slate-400 text-sm mb-6" x-text="plan.sub[lang]"></div>
+          <ul class="space-y-2 mb-8 flex-1">
+            <template x-for="f in plan.features[lang]" :key="f">
+              <li class="flex items-start gap-2 text-sm text-slate-300">
+                <span class="text-green-400 mt-0.5">✓</span><span x-text="f"></span>
+              </li>
+            </template>
+          </ul>
+          <button class="btn-primary w-full text-sm" @click="page='register'" x-text="lang==='en'?'Get Started':'立即开始'"></button>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 py-10 px-6 text-center text-slate-500 text-sm">
+    <div class="mb-3 font-semibold text-slate-400">NexusAI Gateway</div>
+    <div x-text="lang==='en'?'© 2026 NexusAI. Premium AI API infrastructure for global developers.':'© 2026 NexusAI. 面向全球开发者的高性能 AI API 中转平台。'"></div>
+  </footer>
+</div>
+
+<!-- ══════════════════════════ PRICING PAGE ════════════════════════════════ -->
+<div x-show="page==='pricing'" class="min-h-screen pt-28 pb-20 px-6">
+  <div class="max-w-5xl mx-auto">
+    <h1 class="text-4xl font-bold text-center mb-4" x-text="lang==='en'?'Pricing':'定价'"></h1>
+    <p class="text-slate-400 text-center mb-16" x-text="lang==='en'?'Transparent, usage-based pricing. Pay with USDT.':'透明的按量计费，支持 USDT 充值。'"></p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+      <template x-for="plan in plans()" :key="plan.name">
+        <div class="glass rounded-xl p-7 card-hover flex flex-col" :class="plan.popular?'border-brand-500/40 glow':''">
+          <template x-if="plan.popular"><div class="text-xs text-brand-400 font-semibold mb-3 uppercase tracking-wider" x-text="lang==='en'?'Most Popular':'最受欢迎'"></div></template>
+          <h3 class="text-xl font-bold text-white mb-1" x-text="plan.name"></h3>
+          <div class="text-3xl font-extrabold gradient-text mt-2 mb-1" x-text="plan.price"></div>
+          <div class="text-slate-400 text-sm mb-6" x-text="plan.sub[lang]"></div>
+          <ul class="space-y-2 mb-8 flex-1">
+            <template x-for="f in plan.features[lang]" :key="f">
+              <li class="flex items-start gap-2 text-sm text-slate-300"><span class="text-green-400 mt-0.5">✓</span><span x-text="f"></span></li>
+            </template>
+          </ul>
+          <button class="btn-primary w-full text-sm" @click="page='register'" x-text="lang==='en'?'Get Started':'立即开始'"></button>
+        </div>
+      </template>
+    </div>
+    <!-- Model Pricing Table -->
+    <div class="glass rounded-xl p-6">
+      <h3 class="font-semibold text-white mb-6" x-text="lang==='en'?'Model Pricing (per 1M tokens)':'模型定价（每百万 Token）'"></h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead><tr class="text-slate-400 border-b border-white/10">
+            <th class="text-left py-3 pr-4" x-text="lang==='en'?'Model':'模型'"></th>
+            <th class="text-right py-3 pr-4" x-text="lang==='en'?'Input':'输入'"></th>
+            <th class="text-right py-3" x-text="lang==='en'?'Output':'输出'"></th>
+          </tr></thead>
+          <tbody>
+            <template x-for="m in modelPricing" :key="m.name">
+              <tr class="border-b border-white/5 hover:bg-white/2">
+                <td class="py-3 pr-4 font-mono text-brand-400" x-text="m.name"></td>
+                <td class="text-right py-3 pr-4 text-slate-300" x-text="'$'+m.input"></td>
+                <td class="text-right py-3 text-slate-300" x-text="'$'+m.output"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ LOGIN PAGE ══════════════════════════════════ -->
+<div x-show="page==='login'" class="min-h-screen flex items-center justify-center px-6 pt-16">
+  <div class="w-full max-w-md">
+    <div class="glass rounded-2xl p-8">
+      <h2 class="text-2xl font-bold text-white mb-2" x-text="lang==='en'?'Sign In':'登录'"></h2>
+      <p class="text-slate-400 text-sm mb-8" x-text="lang==='en'?'Welcome back to NexusAI Gateway':'欢迎回来，NexusAI Gateway'"></p>
+      <form @submit.prevent="doLogin()">
+        <div class="mb-4">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Email':'邮箱'"></label>
+          <input class="input-dark" type="email" x-model="loginForm.email" :placeholder="lang==='en'?'you@example.com':'输入邮箱'" required />
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Password':'密码'"></label>
+          <input class="input-dark" type="password" x-model="loginForm.password" :placeholder="lang==='en'?'Your password':'输入密码'" required />
+        </div>
+        <template x-if="loginError">
+          <div class="mb-4 text-red-400 text-sm p-3 bg-red-500/10 rounded-lg" x-text="loginError"></div>
+        </template>
+        <button class="btn-primary w-full py-3" type="submit" :disabled="loginLoading">
+          <span x-text="loginLoading?(lang==='en'?'Signing in...':'登录中...'):(lang==='en'?'Sign In':'登录')"></span>
+        </button>
+      </form>
+      <p class="text-center text-slate-400 text-sm mt-6">
+        <span x-text="lang==='en'?\"Don't have an account? \":'没有账号？'"></span>
+        <span class="text-brand-400 cursor-pointer hover:underline" @click="page='register'" x-text="lang==='en'?'Register':'注册'"></span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ REGISTER PAGE ═══════════════════════════════ -->
+<div x-show="page==='register'" class="min-h-screen flex items-center justify-center px-6 pt-16">
+  <div class="w-full max-w-md">
+    <div class="glass rounded-2xl p-8">
+      <h2 class="text-2xl font-bold text-white mb-2" x-text="lang==='en'?'Create Account':'注册账号'"></h2>
+      <p class="text-slate-400 text-sm mb-8" x-text="lang==='en'?'Start building with NexusAI Gateway':'开始使用 NexusAI Gateway'"></p>
+      <form @submit.prevent="doRegister()">
+        <div class="mb-4">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Username':'用户名'"></label>
+          <input class="input-dark" type="text" x-model="regForm.username" :placeholder="lang==='en'?'Your username':'3-32个字符'" required />
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Email':'邮箱'"></label>
+          <input class="input-dark" type="email" x-model="regForm.email" :placeholder="lang==='en'?'you@example.com':'输入邮箱'" required />
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Password':'密码'"></label>
+          <input class="input-dark" type="password" x-model="regForm.password" :placeholder="lang==='en'?'At least 6 characters':'至少6个字符'" required />
+        </div>
+        <template x-if="regError">
+          <div class="mb-4 text-red-400 text-sm p-3 bg-red-500/10 rounded-lg" x-text="regError"></div>
+        </template>
+        <button class="btn-primary w-full py-3" type="submit" :disabled="regLoading">
+          <span x-text="regLoading?(lang==='en'?'Creating...':'注册中...'):(lang==='en'?'Create Account':'创建账号')"></span>
+        </button>
+      </form>
+      <p class="text-center text-slate-400 text-sm mt-6">
+        <span x-text="lang==='en'?'Already have an account? ':'已有账号？'"></span>
+        <span class="text-brand-400 cursor-pointer hover:underline" @click="page='login'" x-text="lang==='en'?'Sign In':'登录'"></span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ DASHBOARD ══════════════════════════════════ -->
+<div x-show="page==='dashboard'" class="min-h-screen pt-24 pb-16 px-6">
+  <div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-2xl font-bold text-white" x-text="lang==='en'?'Dashboard':'控制台'"></h1>
+        <p class="text-slate-400 text-sm mt-1" x-text="user?`@${user.username}`:''"></p>
+      </div>
+      <button class="btn-primary px-6 py-2.5 text-sm" @click="page='recharge'" x-text="lang==='en'?'Top Up USDT ↑':'USDT充值 ↑'"></button>
+    </div>
+
+    <!-- Stats cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div class="glass rounded-xl p-5">
+        <div class="text-slate-400 text-sm mb-1" x-text="lang==='en'?'Balance':'余额'"></div>
+        <div class="text-3xl font-bold gradient-text" x-text="user?'$'+balanceFmt(user.balance):'$0.00'"></div>
+      </div>
+      <div class="glass rounded-xl p-5">
+        <div class="text-slate-400 text-sm mb-1" x-text="lang==='en'?'Total Quota':'总额度'"></div>
+        <div class="text-3xl font-bold text-white" x-text="user?'$'+balanceFmt(user.quota):'$0.00'"></div>
+      </div>
+      <div class="glass rounded-xl p-5">
+        <div class="text-slate-400 text-sm mb-1" x-text="lang==='en'?'Used':'已用'"></div>
+        <div class="text-3xl font-bold text-slate-300" x-text="user?'$'+balanceFmt(user.used_quota):'$0.00'"></div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-6 border-b border-white/10 mb-8">
+      <button class="py-3 text-sm font-medium transition-colors pb-3" :class="dashTab==='keys'?'tab-active text-brand-400':'text-slate-400 hover:text-white'" @click="dashTab='keys'; loadTokens()" x-text="lang==='en'?'API Keys':'API 密钥'"></button>
+      <button class="py-3 text-sm font-medium transition-colors pb-3" :class="dashTab==='orders'?'tab-active text-brand-400':'text-slate-400 hover:text-white'" @click="dashTab='orders'; loadOrders()" x-text="lang==='en'?'Recharge History':'充值记录'"></button>
+    </div>
+
+    <!-- API Keys tab -->
+    <div x-show="dashTab==='keys'">
+      <div class="flex justify-between items-center mb-4">
+        <p class="text-slate-400 text-sm" x-text="lang==='en'?'Max 5 active keys':'最多5个有效密钥'"></p>
+        <button class="btn-primary text-sm py-2 px-4" @click="showCreateKey=true" x-text="lang==='en'?'+ New Key':'+ 创建密钥'"></button>
+      </div>
+
+      <!-- Create key modal -->
+      <template x-if="showCreateKey">
+        <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4" @click.self="showCreateKey=false;newKeyResult=null">
+          <div class="glass rounded-2xl p-7 w-full max-w-md">
+            <h3 class="font-bold text-white mb-5" x-text="lang==='en'?'Create API Key':'创建 API 密钥'"></h3>
+            <template x-if="!newKeyResult">
+              <div>
+                <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Key Name':'密钥名称'"></label>
+                <input class="input-dark mb-4" x-model="newKeyName" :placeholder="lang==='en'?'e.g. Production Key':'例：生产环境密钥'" />
+                <button class="btn-primary w-full py-2.5 text-sm" @click="createKey()" :disabled="keyLoading" x-text="keyLoading?(lang==='en'?'Creating...':'创建中...'):(lang==='en'?'Create':'创建')"></button>
+              </div>
+            </template>
+            <template x-if="newKeyResult">
+              <div>
+                <div class="text-green-400 text-sm mb-3" x-text="lang==='en'?'✓ Key created! Save it now — it won\\'t be shown again.':'✓ 密钥已创建！请立即保存，此后不再显示。'"></div>
+                <div class="bg-black/30 rounded-lg p-3 font-mono text-sm text-brand-400 break-all mb-4 select-all" x-text="newKeyResult"></div>
+                <button class="btn-primary w-full py-2.5 text-sm" @click="copyText(newKeyResult)" x-text="lang==='en'?'Copy Key':'复制密钥'"></button>
+                <button class="btn-ghost w-full py-2.5 text-sm mt-2" @click="showCreateKey=false;newKeyResult=null;loadTokens()" x-text="lang==='en'?'Done':'完成'"></button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <!-- Keys list -->
+      <template x-if="tokens.length===0">
+        <div class="glass rounded-xl p-10 text-center text-slate-400" x-text="lang==='en'?'No API keys yet. Create one to get started.':'还没有 API 密钥，点击上方按钮创建。'"></div>
+      </template>
+      <div class="space-y-3">
+        <template x-for="t in tokens" :key="t.id">
+          <div class="glass rounded-xl p-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-medium text-white mb-1" x-text="t.name"></div>
+              <div class="font-mono text-sm text-slate-400" x-text="t.token_key"></div>
+            </div>
+            <div class="flex items-center gap-4">
+              <div class="text-right">
+                <div class="text-xs text-slate-500" x-text="lang==='en'?'Used':'已用'"></div>
+                <div class="text-sm font-mono text-slate-300" x-text="'$'+balanceFmt(t.used_quota)"></div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" :class="t.status===1?'bg-green-400':'bg-red-400'"></span>
+                <span class="text-xs text-slate-400" x-text="t.status===1?(lang==='en'?'Active':'有效'):(lang==='en'?'Disabled':'禁用')"></span>
+              </div>
+              <button class="text-red-400/70 hover:text-red-400 text-sm transition-colors" @click="deleteKey(t.id)" x-text="lang==='en'?'Delete':'删除'"></button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Orders tab -->
+    <div x-show="dashTab==='orders'">
+      <template x-if="orders.length===0">
+        <div class="glass rounded-xl p-10 text-center">
+          <div class="text-slate-400 mb-4" x-text="lang==='en'?'No recharge history yet.':'暂无充值记录。'"></div>
+          <button class="btn-primary text-sm py-2 px-6" @click="page='recharge'" x-text="lang==='en'?'Top Up Now':'立即充值'"></button>
+        </div>
+      </template>
+      <div class="space-y-3">
+        <template x-for="o in orders" :key="o.order_no">
+          <div class="glass rounded-xl p-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="font-mono text-sm text-slate-400 mb-1" x-text="o.order_no"></div>
+              <div class="text-xs text-slate-500" x-text="o.created_at?new Date(o.created_at).toLocaleString():''"></div>
+            </div>
+            <div class="flex items-center gap-6">
+              <div class="text-right">
+                <div class="font-semibold text-white" x-text="o.amount_usdt+' USDT'"></div>
+                <div class="text-xs text-slate-400" x-text="'= $'+o.amount_usd"></div>
+              </div>
+              <div class="text-xs px-3 py-1 rounded-full font-medium"
+                :class="{'bg-green-500/10 text-green-400 border border-green-500/20':o.status==='paid','bg-yellow-500/10 text-yellow-400 border border-yellow-500/20':o.status==='pending'||o.status==='confirming','bg-red-500/10 text-red-400 border border-red-500/20':o.status==='expired'||o.status==='failed'}"
+                x-text="o.status"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ RECHARGE PAGE ═══════════════════════════════ -->
+<div x-show="page==='recharge'" class="min-h-screen pt-24 pb-16 px-6">
+  <div class="max-w-lg mx-auto">
+    <button class="text-slate-400 hover:text-white text-sm mb-6 flex items-center gap-1" @click="page='dashboard'">← <span x-text="lang==='en'?'Back':'返回'"></span></button>
+    <h1 class="text-2xl font-bold text-white mb-8" x-text="lang==='en'?'Top Up with USDT':'USDT 充值'"></h1>
+
+    <template x-if="!rechargeOrder">
+      <div class="glass rounded-2xl p-8">
+        <!-- Chain selection -->
+        <div class="mb-6">
+          <label class="block text-sm text-slate-400 mb-3" x-text="lang==='en'?'Select Network':'选择网络'"></label>
+          <div class="flex gap-3">
+            <button class="chain-btn flex-1 text-sm font-medium" :class="rechargeChain==='TRC20'?'selected':''" @click="rechargeChain='TRC20'">TRC20<div class="text-xs text-slate-500 mt-0.5">Tron</div></button>
+            <button class="chain-btn flex-1 text-sm font-medium" :class="rechargeChain==='ERC20'?'selected':''" @click="rechargeChain='ERC20'">ERC20<div class="text-xs text-slate-500 mt-0.5">Ethereum</div></button>
+          </div>
+        </div>
+        <!-- Amount -->
+        <div class="mb-6">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Amount (USDT)':'金额（USDT）'"></label>
+          <input class="input-dark" type="number" min="1" step="0.01" x-model="rechargeAmount" placeholder="e.g. 10" />
+          <div class="text-xs text-slate-500 mt-2" x-text="lang==='en'?'Minimum: 1 USDT = $1.00 credit':'最低：1 USDT = $1.00 额度'"></div>
+        </div>
+        <!-- Quick amounts -->
+        <div class="flex gap-2 mb-6 flex-wrap">
+          <template x-for="amt in [10,50,100,500]" :key="amt">
+            <button class="btn-ghost text-sm py-1.5 px-3" @click="rechargeAmount=amt" x-text="amt+' USDT'"></button>
+          </template>
+        </div>
+        <template x-if="rechargeError">
+          <div class="mb-4 text-red-400 text-sm p-3 bg-red-500/10 rounded-lg" x-text="rechargeError"></div>
+        </template>
+        <button class="btn-primary w-full py-3" @click="createRecharge()" :disabled="rechargeLoading" x-text="rechargeLoading?(lang==='en'?'Creating order...':'创建订单中...'):(lang==='en'?'Generate Payment Address':'生成收款地址')"></button>
+      </div>
+    </template>
+
+    <template x-if="rechargeOrder">
+      <div class="glass rounded-2xl p-8">
+        <div class="text-green-400 text-sm mb-5 p-3 bg-green-500/10 rounded-lg" x-text="lang==='en'?'✓ Order created! Send USDT to the address below.':'✓ 订单已创建！请向下方地址转账。'"></div>
+
+        <div class="mb-5">
+          <div class="text-sm text-slate-400 mb-2" x-text="lang==='en'?'Network':'网络'"></div>
+          <div class="font-mono text-brand-400 font-semibold" x-text="rechargeOrder.chain"></div>
+        </div>
+
+        <div class="mb-5">
+          <div class="text-sm text-slate-400 mb-2" x-text="lang==='en'?'Payment Address':'收款地址'"></div>
+          <div class="flex items-center gap-2">
+            <div class="bg-black/30 rounded-lg p-3 font-mono text-sm text-slate-300 break-all flex-1" x-text="rechargeOrder.pay_address"></div>
+            <button class="copy-btn text-brand-400" @click="copyText(rechargeOrder.pay_address)" title="Copy">📋</button>
+          </div>
+        </div>
+
+        <div class="mb-5">
+          <div class="text-sm text-slate-400 mb-2" x-text="lang==='en'?'Amount to Send':'转账金额'"></div>
+          <div class="text-2xl font-bold text-white" x-text="rechargeOrder.amount_usdt+' USDT'"></div>
+          <div class="text-sm text-slate-400" x-text="'≈ $'+rechargeOrder.amount_usd+' credit'"></div>
+        </div>
+
+        <div class="mb-7 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
+          <div class="text-yellow-400 text-xs font-semibold mb-1" x-text="lang==='en'?'⚠ IMPORTANT: Include this memo/remark':'⚠ 重要：转账时请备注以下内容'"></div>
+          <div class="font-mono text-sm text-white" x-text="rechargeOrder.memo"></div>
+        </div>
+
+        <!-- Submit TX hash -->
+        <div class="mb-4">
+          <label class="block text-sm text-slate-400 mb-2" x-text="lang==='en'?'Transaction Hash (after payment)':'交易哈希（转账后填写）'"></label>
+          <input class="input-dark" type="text" x-model="txHash" :placeholder="lang==='en'?'0x... or Txid...':'粘贴链上交易哈希'" />
+        </div>
+        <template x-if="txMsg">
+          <div class="mb-4 text-green-400 text-sm p-3 bg-green-500/10 rounded-lg" x-text="txMsg"></div>
+        </template>
+        <div class="flex gap-3">
+          <button class="btn-primary flex-1 py-2.5 text-sm" @click="submitTx()" :disabled="txLoading || !txHash" x-text="txLoading?(lang==='en'?'Submitting...':'提交中...'):(lang==='en'?'Submit TX Hash':'提交交易哈希')"></button>
+          <button class="btn-ghost py-2.5 px-4 text-sm" @click="rechargeOrder=null;txHash='';txMsg=''" x-text="lang==='en'?'New Order':'新订单'"></button>
+        </div>
+        <p class="text-slate-500 text-xs mt-4 text-center" x-text="lang==='en'?'Credits are added within 30 minutes after on-chain confirmation.':'链上确认后30分钟内到账额度。'"></p>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- Toast -->
+<div x-show="toast" x-transition class="fixed bottom-6 right-6 z-50 bg-surface-600 border border-white/10 rounded-xl px-5 py-3 text-sm text-white shadow-2xl" x-text="toast"></div>
+
+<script>
+function app() {
+  return {
+    page: 'home',
+    lang: localStorage.getItem('lang') || 'en',
+    user: null,
+    token: null,
+    toast: '',
+    dashTab: 'keys',
+    tokens: [],
+    orders: [],
+    showCreateKey: false,
+    newKeyName: '',
+    newKeyResult: null,
+    keyLoading: false,
+    loginForm: { email: '', password: '' },
+    loginError: '', loginLoading: false,
+    regForm: { username: '', email: '', password: '' },
+    regError: '', regLoading: false,
+    rechargeChain: 'TRC20',
+    rechargeAmount: '',
+    rechargeOrder: null,
+    rechargeError: '',
+    rechargeLoading: false,
+    txHash: '',
+    txMsg: '',
+    txLoading: false,
+    modelPricing: [
+      { name: 'gpt-4o', input: '5.00', output: '15.00' },
+      { name: 'gpt-4o-mini', input: '0.15', output: '0.60' },
+      { name: 'gpt-4-turbo', input: '10.00', output: '30.00' },
+      { name: 'claude-3-5-sonnet', input: '3.00', output: '15.00' },
+      { name: 'claude-3-haiku', input: '0.25', output: '1.25' },
+      { name: 'gemini-1.5-pro', input: '3.50', output: '10.50' },
+      { name: 'gemini-1.5-flash', input: '0.075', output: '0.30' },
+    ],
+
+    init() {
+      this.$watch('lang', v => localStorage.setItem('lang', v))
+      const saved = localStorage.getItem('user_token')
+      const savedUser = localStorage.getItem('user_info')
+      if (saved && savedUser) {
+        this.token = saved
+        this.user = JSON.parse(savedUser)
+        this.refreshUser()
+      }
+    },
+
+    features() {
+      const en = [
+        { icon: '🔑', title: 'Unified API Key', desc: 'One key to access all AI models. OpenAI-compatible SDK support.' },
+        { icon: '⚡', title: 'Smart Routing', desc: 'Automatic failover and load balancing across multiple upstream providers.' },
+        { icon: '📊', title: 'Usage Analytics', desc: 'Real-time dashboard showing costs, latency, and request logs.' },
+        { icon: '💰', title: 'USDT Payments', desc: 'Pay with USDT (TRC20/ERC20). No credit card, no bank account needed.' },
+        { icon: '🌊', title: 'Streaming Support', desc: 'Full support for streaming responses. Works with all major AI frameworks.' },
+        { icon: '🛡', title: 'Rate Limiting', desc: 'Per-key rate limits protect your budget from accidental overuse.' },
+      ]
+      const zh = [
+        { icon: '🔑', title: '统一 API Key', desc: '一个密钥访问所有 AI 模型，兼容 OpenAI SDK。' },
+        { icon: '⚡', title: '智能路由', desc: '多上游自动熔断切换，降低失败率与延迟。' },
+        { icon: '📊', title: '用量分析', desc: '实时查看费用、延迟、请求日志。' },
+        { icon: '💰', title: 'USDT 支付', desc: '支持 TRC20/ERC20，无需银行账户，适合全球用户。' },
+        { icon: '🌊', title: '流式响应', desc: '完整支持流式输出，兼容主流 AI 框架。' },
+        { icon: '🛡', title: '限流保护', desc: '每个密钥独立限速，防止超额消费。' },
+      ]
+      return this.lang === 'en' ? en : zh
+    },
+
+    plans() {
+      return [
+        {
+          name: 'Starter', price: 'Pay as you go', popular: false,
+          sub: { en: 'No minimum. Top up anytime.', zh: '无最低要求，随时充值。' },
+          features: {
+            en: ['Access all models', 'OpenAI-compatible API', 'Up to 5 API keys', '60 req/min rate limit', 'USDT payment'],
+            zh: ['访问所有模型', '兼容 OpenAI API', '最多5个API密钥', '60次/分钟限速', 'USDT支付'],
+          }
+        },
+        {
+          name: 'Pro', price: '$50+', popular: true,
+          sub: { en: 'Top up $50+ to unlock Pro benefits.', zh: '充值$50+解锁Pro权益。' },
+          features: {
+            en: ['Everything in Starter', 'Higher rate limits', 'Priority routing', 'Lower latency routes', 'Email support'],
+            zh: ['Starter所有功能', '更高限速', '优先路由', '低延迟线路', '邮件支持'],
+          }
+        },
+        {
+          name: 'Enterprise', price: 'Custom', popular: false,
+          sub: { en: 'For high-volume teams.', zh: '大流量团队专属。' },
+          features: {
+            en: ['Unlimited API keys', 'Dedicated routes', 'Custom rate limits', 'SLA guarantee', 'Priority support'],
+            zh: ['无限API密钥', '专属线路', '自定义限速', 'SLA保障', '优先支持'],
+          }
+        },
+      ]
+    },
+
+    balanceFmt(v) { return (parseFloat(v)||0).toFixed(4) },
+
+    showToast(msg, ms=3000) {
+      this.toast = msg
+      setTimeout(() => this.toast = '', ms)
+    },
+
+    copyText(text) {
+      navigator.clipboard.writeText(text).then(() => this.showToast(this.lang==='en'?'Copied!':'已复制！'))
+    },
+
+    async api(path, opts={}) {
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) }
+      if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+      const r = await fetch(path, { ...opts, headers })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(data.detail || data.message || 'Request failed')
+      return data
+    },
+
+    async doLogin() {
+      this.loginError = ''; this.loginLoading = true
+      try {
+        const d = await this.api('/api/auth/login', { method:'POST', body: JSON.stringify(this.loginForm) })
+        this.token = d.access_token
+        this.user = d.user
+        localStorage.setItem('user_token', d.access_token)
+        localStorage.setItem('user_info', JSON.stringify(d.user))
+        this.page = 'dashboard'
+        this.loadTokens()
+      } catch(e) { this.loginError = e.message }
+      finally { this.loginLoading = false }
+    },
+
+    async doRegister() {
+      this.regError = ''; this.regLoading = true
+      try {
+        const d = await this.api('/api/auth/register', { method:'POST', body: JSON.stringify(this.regForm) })
+        this.token = d.access_token
+        this.user = d.user
+        localStorage.setItem('user_token', d.access_token)
+        localStorage.setItem('user_info', JSON.stringify(d.user))
+        this.page = 'dashboard'
+        this.loadTokens()
+      } catch(e) { this.regError = e.message }
+      finally { this.regLoading = false }
+    },
+
+    logout() {
+      this.user = null; this.token = null
+      localStorage.removeItem('user_token'); localStorage.removeItem('user_info')
+      this.page = 'home'
+    },
+
+    async refreshUser() {
+      try {
+        const d = await this.api('/api/auth/me')
+        this.user = d
+        localStorage.setItem('user_info', JSON.stringify(d))
+      } catch(e) { this.logout() }
+    },
+
+    async loadTokens() {
+      try { this.tokens = await this.api('/api/tokens') } catch(e) {}
+    },
+
+    async createKey() {
+      this.keyLoading = true
+      try {
+        const d = await this.api('/api/tokens', { method:'POST', body: JSON.stringify({ name: this.newKeyName||'My API Key' }) })
+        this.newKeyResult = d.token_key
+      } catch(e) { this.showToast(e.message) }
+      finally { this.keyLoading = false }
+    },
+
+    async deleteKey(id) {
+      if (!confirm(this.lang==='en'?'Delete this API key?':'确认删除此密钥？')) return
+      try {
+        await this.api(`/api/tokens/${id}`, { method:'DELETE' })
+        this.loadTokens()
+        this.showToast(this.lang==='en'?'Key deleted':'密钥已删除')
+      } catch(e) { this.showToast(e.message) }
+    },
+
+    async loadOrders() {
+      try { this.orders = (await this.api('/api/recharge/orders')).data } catch(e) {}
+    },
+
+    async createRecharge() {
+      if (!this.rechargeAmount || parseFloat(this.rechargeAmount) < 1) {
+        this.rechargeError = this.lang==='en'?'Minimum 1 USDT':'最低充值1 USDT'; return
+      }
+      this.rechargeError = ''; this.rechargeLoading = true
+      try {
+        this.rechargeOrder = await this.api('/api/recharge/create', {
+          method:'POST', body: JSON.stringify({ amount_usdt: parseFloat(this.rechargeAmount), chain: this.rechargeChain })
+        })
+      } catch(e) { this.rechargeError = e.message }
+      finally { this.rechargeLoading = false }
+    },
+
+    async submitTx() {
+      if (!this.txHash.trim()) return
+      this.txLoading = true; this.txMsg = ''
+      try {
+        const d = await this.api('/api/recharge/submit_tx', {
+          method:'POST', body: JSON.stringify({ order_no: this.rechargeOrder.order_no, tx_hash: this.txHash })
+        })
+        this.txMsg = d.message
+      } catch(e) { this.txMsg = e.message }
+      finally { this.txLoading = false }
+    },
+  }
+}
+</script>
+</body>
+</html>

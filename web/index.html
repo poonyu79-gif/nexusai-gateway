@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI API 中转站管理面板</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .toast-enter { animation: slideIn 0.3s ease-out; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .bar { transition: height 0.3s ease; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+  </style>
+  <script>tailwind.config = { darkMode: 'class' }</script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans" x-data="app()" x-init="init()" x-cloak>
+
+<!-- ─── Toast 通知 ─── -->
+<div class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80">
+  <template x-for="toast in toasts" :key="toast.id">
+    <div class="toast-enter flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm font-medium"
+         :class="toast.type === 'success' ? 'bg-green-600 text-white' : toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'">
+      <span x-text="toast.type === 'success' ? '✓' : toast.type === 'error' ? '✗' : 'ℹ'"></span>
+      <span x-text="toast.msg" class="flex-1"></span>
+    </div>
+  </template>
+</div>
+
+<!-- ─── 登录对话框 ─── -->
+<div x-show="!authed" class="fixed inset-0 bg-gray-950 flex items-center justify-center z-40">
+  <div class="bg-gray-900 rounded-2xl p-8 w-96 shadow-2xl border border-gray-800">
+    <div class="text-center mb-6">
+      <div class="text-4xl mb-2">🔌</div>
+      <h1 class="text-2xl font-bold text-white">AI API 中转站</h1>
+      <p class="text-gray-400 text-sm mt-1">管理面板</p>
+    </div>
+    <input type="password" x-model="loginToken"
+           placeholder="输入管理员 Token (sk-...)"
+           class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 mb-4"
+           @keyup.enter="doLogin()" />
+    <button @click="doLogin()" :disabled="loginLoading"
+            class="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition-colors">
+      <span x-show="!loginLoading">登录</span>
+      <span x-show="loginLoading">验证中...</span>
+    </button>
+    <p class="text-gray-500 text-xs text-center mt-4">首次启动时 Token 会在服务日志中打印</p>
+  </div>
+</div>
+
+<!-- ─── 主布局 ─── -->
+<div x-show="authed" class="flex h-screen overflow-hidden">
+
+  <!-- 侧边栏 -->
+  <aside class="w-56 bg-gray-900 border-r border-gray-800 flex flex-col flex-shrink-0">
+    <div class="p-5 border-b border-gray-800">
+      <div class="text-xl font-bold text-white flex items-center gap-2">
+        <span>🔌</span><span>API 中转站</span>
+      </div>
+      <div class="text-xs text-gray-500 mt-1">Admin Panel</div>
+    </div>
+
+    <nav class="flex-1 p-3 space-y-1">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button @click="currentTab = tab.id"
+                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                :class="currentTab === tab.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'">
+          <span x-text="tab.icon" class="text-lg"></span>
+          <span x-text="tab.name"></span>
+        </button>
+      </template>
+    </nav>
+
+    <div class="p-4 border-t border-gray-800">
+      <button @click="logout()" class="w-full text-xs text-gray-500 hover:text-red-400 transition-colors py-1">退出登录</button>
+    </div>
+  </aside>
+
+  <!-- 内容区域 -->
+  <main class="flex-1 overflow-y-auto bg-gray-950">
+
+    <!-- ─── 仪表盘 ─── -->
+    <div x-show="currentTab === 'dashboard'" class="p-6">
+      <h2 class="text-2xl font-bold mb-6">仪表盘</h2>
+
+      <!-- 指标卡片 -->
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <template x-for="card in statCards" :key="card.key">
+          <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+            <div class="text-gray-400 text-sm mb-1" x-text="card.label"></div>
+            <div class="text-2xl font-bold text-white" x-text="card.value"></div>
+            <div class="text-xs mt-1" :class="card.sub ? 'text-green-400' : 'text-gray-600'" x-text="card.sub || '—'"></div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 每日趋势图 -->
+      <div class="bg-gray-900 rounded-xl p-5 border border-gray-800 mb-6">
+        <h3 class="text-base font-semibold mb-4 text-gray-200">近30天请求趋势</h3>
+        <div class="flex items-end gap-1 h-32">
+          <template x-for="d in dailyStats" :key="d.date">
+            <div class="flex-1 flex flex-col items-center gap-1 group relative">
+              <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-700 text-xs text-white px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap transition-opacity z-10"
+                   x-text="d.date + ': ' + d.request_count + ' 次'"></div>
+              <div class="bar w-full bg-blue-600 rounded-t opacity-80 hover:opacity-100 min-h-1"
+                   :style="'height:' + (dailyMax > 0 ? Math.max(4, d.request_count / dailyMax * 100) : 4) + '%'"></div>
+            </div>
+          </template>
+        </div>
+        <div class="flex justify-between text-xs text-gray-600 mt-2">
+          <span x-text="dailyStats[0]?.date || ''"></span>
+          <span x-text="dailyStats[dailyStats.length-1]?.date || ''"></span>
+        </div>
+      </div>
+
+      <!-- 模型使用排行 -->
+      <div class="bg-gray-900 rounded-xl p-5 border border-gray-800">
+        <h3 class="text-base font-semibold mb-4 text-gray-200">模型使用排行</h3>
+        <div class="space-y-3">
+          <template x-for="(m, idx) in modelStats.slice(0,5)" :key="m.model">
+            <div class="flex items-center gap-3">
+              <div class="text-xs text-gray-500 w-4 text-right" x-text="idx+1"></div>
+              <div class="flex-1">
+                <div class="flex justify-between text-sm mb-1">
+                  <span class="text-gray-200 font-medium" x-text="m.model"></span>
+                  <span class="text-gray-400" x-text="m.request_count + ' 次'"></span>
+                </div>
+                <div class="h-1.5 bg-gray-800 rounded-full">
+                  <div class="h-1.5 bg-blue-500 rounded-full"
+                       :style="'width:' + (modelStats[0]?.request_count > 0 ? m.request_count / modelStats[0].request_count * 100 : 0) + '%'"></div>
+                </div>
+              </div>
+              <div class="text-xs text-green-400 w-20 text-right" x-text="'$' + m.total_cost.toFixed(4)"></div>
+            </div>
+          </template>
+          <div x-show="modelStats.length === 0" class="text-gray-600 text-sm text-center py-4">暂无数据</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── 渠道管理 ─── -->
+    <div x-show="currentTab === 'channels'" class="p-6">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold">渠道管理</h2>
+        <button @click="openChannelModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ 添加渠道</button>
+      </div>
+
+      <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-400">
+              <th class="px-4 py-3 text-left">名称</th>
+              <th class="px-4 py-3 text-left">类型</th>
+              <th class="px-4 py-3 text-left">状态</th>
+              <th class="px-4 py-3 text-left">优先级</th>
+              <th class="px-4 py-3 text-left">支持模型</th>
+              <th class="px-4 py-3 text-left">错误次数</th>
+              <th class="px-4 py-3 text-left">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="ch in channels" :key="ch.id">
+              <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                <td class="px-4 py-3 font-medium text-white" x-text="ch.name"></td>
+                <td class="px-4 py-3">
+                  <span class="px-2 py-0.5 rounded text-xs font-mono"
+                        :class="{'bg-green-900 text-green-300': ch.channel_type==='openai', 'bg-orange-900 text-orange-300': ch.channel_type==='claude', 'bg-blue-900 text-blue-300': ch.channel_type==='azure', 'bg-purple-900 text-purple-300': ch.channel_type==='gemini', 'bg-gray-700 text-gray-300': ch.channel_type==='custom'}"
+                        x-text="ch.channel_type"></span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full" :class="ch.status === 1 ? 'bg-green-400' : 'bg-red-400'"></span>
+                    <span :class="ch.status === 1 ? 'text-green-400' : 'text-red-400'" x-text="ch.status === 1 ? '启用' : '禁用'"></span>
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-gray-300" x-text="ch.priority"></td>
+                <td class="px-4 py-3 text-gray-400 max-w-xs truncate" x-text="ch.supported_models"></td>
+                <td class="px-4 py-3" :class="ch.error_count > 0 ? 'text-red-400' : 'text-gray-400'" x-text="ch.error_count"></td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <button @click="testChannel(ch)" class="text-xs text-blue-400 hover:text-blue-300">测试</button>
+                    <button @click="openChannelModal(ch)" class="text-xs text-yellow-400 hover:text-yellow-300">编辑</button>
+                    <button @click="toggleChannel(ch)" class="text-xs" :class="ch.status === 1 ? 'text-orange-400 hover:text-orange-300' : 'text-green-400 hover:text-green-300'"
+                            x-text="ch.status === 1 ? '禁用' : '启用'"></button>
+                    <button @click="deleteChannel(ch)" class="text-xs text-red-400 hover:text-red-300">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="channels.length === 0">
+              <td colspan="7" class="text-center py-10 text-gray-600">暂无渠道，点击右上角添加</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── 令牌管理 ─── -->
+    <div x-show="currentTab === 'tokens'" class="p-6">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold">令牌管理</h2>
+        <button @click="openTokenModal()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ 创建令牌</button>
+      </div>
+
+      <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-400">
+              <th class="px-4 py-3 text-left">名称</th>
+              <th class="px-4 py-3 text-left">Token</th>
+              <th class="px-4 py-3 text-left">额度</th>
+              <th class="px-4 py-3 text-left">限速</th>
+              <th class="px-4 py-3 text-left">允许模型</th>
+              <th class="px-4 py-3 text-left">过期时间</th>
+              <th class="px-4 py-3 text-left">状态</th>
+              <th class="px-4 py-3 text-left">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="tk in tokens" :key="tk.id">
+              <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                <td class="px-4 py-3 font-medium text-white" x-text="tk.name"></td>
+                <td class="px-4 py-3">
+                  <span class="font-mono text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded" x-text="tk.token_key"></span>
+                </td>
+                <td class="px-4 py-3">
+                  <div x-show="tk.total_quota === -1" class="text-green-400 text-xs">无限</div>
+                  <div x-show="tk.total_quota !== -1">
+                    <div class="text-xs text-gray-300 mb-1" x-text="'$' + (tk.used_quota||0).toFixed(4) + ' / $' + tk.total_quota.toFixed(4)"></div>
+                    <div class="h-1 bg-gray-700 rounded-full w-24">
+                      <div class="h-1 bg-blue-500 rounded-full" :style="'width:' + Math.min(100, (tk.used_quota||0)/tk.total_quota*100) + '%'"></div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-gray-400" x-text="tk.rate_limit + '/min'"></td>
+                <td class="px-4 py-3 text-gray-400 max-w-xs truncate" x-text="tk.allowed_models"></td>
+                <td class="px-4 py-3 text-gray-400 text-xs" x-text="tk.expires_at ? new Date(tk.expires_at).toLocaleDateString() : '永不过期'"></td>
+                <td class="px-4 py-3">
+                  <span class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full" :class="tk.status === 1 ? 'bg-green-400' : 'bg-red-400'"></span>
+                    <span :class="tk.status === 1 ? 'text-green-400' : 'text-red-400'" x-text="tk.status === 1 ? '启用' : '禁用'"></span>
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <button @click="toggleToken(tk)" class="text-xs" :class="tk.status===1 ? 'text-orange-400 hover:text-orange-300':'text-green-400 hover:text-green-300'"
+                            x-text="tk.status===1?'禁用':'启用'"></button>
+                    <button @click="deleteToken(tk)" class="text-xs text-red-400 hover:text-red-300">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="tokens.length === 0">
+              <td colspan="8" class="text-center py-10 text-gray-600">暂无令牌</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── 日志查询 ─── -->
+    <div x-show="currentTab === 'logs'" class="p-6">
+      <h2 class="text-2xl font-bold mb-6">日志查询</h2>
+
+      <!-- 筛选栏 -->
+      <div class="flex flex-wrap gap-3 mb-4">
+        <input type="text" x-model="logFilter.model" placeholder="模型名称" @keyup.enter="loadLogs()"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-48" />
+        <input type="datetime-local" x-model="logFilter.start_time"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+        <input type="datetime-local" x-model="logFilter.end_time"
+               class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+        <button @click="loadLogs()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg">查询</button>
+        <button @click="logFilter = {}; loadLogs()" class="bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2 rounded-lg">重置</button>
+      </div>
+
+      <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-400">
+              <th class="px-4 py-3 text-left">时间</th>
+              <th class="px-4 py-3 text-left">模型</th>
+              <th class="px-4 py-3 text-right">输入</th>
+              <th class="px-4 py-3 text-right">输出</th>
+              <th class="px-4 py-3 text-right">费用</th>
+              <th class="px-4 py-3 text-right">耗时</th>
+              <th class="px-4 py-3 text-left">类型</th>
+              <th class="px-4 py-3 text-left">状态</th>
+              <th class="px-4 py-3 text-left">IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="log in logs" :key="log.id">
+              <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                <td class="px-4 py-3 text-gray-400 text-xs" x-text="formatTime(log.created_at)"></td>
+                <td class="px-4 py-3 text-gray-200 font-mono text-xs" x-text="log.request_model || '—'"></td>
+                <td class="px-4 py-3 text-right text-gray-400" x-text="log.input_tokens"></td>
+                <td class="px-4 py-3 text-right text-gray-400" x-text="log.output_tokens"></td>
+                <td class="px-4 py-3 text-right text-green-400 text-xs" x-text="'$' + (log.cost||0).toFixed(6)"></td>
+                <td class="px-4 py-3 text-right text-gray-400" x-text="log.duration_ms + 'ms'"></td>
+                <td class="px-4 py-3">
+                  <span class="text-xs px-1.5 py-0.5 rounded" :class="log.is_stream ? 'bg-purple-900 text-purple-300' : 'bg-gray-700 text-gray-300'"
+                        x-text="log.is_stream ? 'Stream' : 'Sync'"></span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="text-xs px-1.5 py-0.5 rounded"
+                        :class="log.status_code === 200 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'"
+                        x-text="log.status_code || '?'"></span>
+                </td>
+                <td class="px-4 py-3 text-gray-500 text-xs" x-text="log.client_ip || '—'"></td>
+              </tr>
+            </template>
+            <tr x-show="logs.length === 0">
+              <td colspan="9" class="text-center py-10 text-gray-600">暂无日志</td>
+            </tr>
+          </tbody>
+        </table>
+        <!-- 分页 -->
+        <div class="flex items-center justify-between px-4 py-3 border-t border-gray-800">
+          <div class="text-xs text-gray-500">共 <span x-text="logTotal"></span> 条记录</div>
+          <div class="flex gap-2">
+            <button @click="logPage--; loadLogs()" :disabled="logPage <= 1"
+                    class="px-3 py-1 text-xs bg-gray-800 rounded disabled:opacity-40 hover:bg-gray-700">上一页</button>
+            <span class="px-3 py-1 text-xs text-gray-400">第 <span x-text="logPage"></span> 页</span>
+            <button @click="logPage++; loadLogs()" :disabled="logPage * 20 >= logTotal"
+                    class="px-3 py-1 text-xs bg-gray-800 rounded disabled:opacity-40 hover:bg-gray-700">下一页</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ─── 渠道弹窗 ─── -->
+<div x-show="showChannelModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-30 p-4" @click.self="showChannelModal=false">
+  <div class="bg-gray-900 rounded-2xl p-6 w-full max-w-lg border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <h3 class="text-lg font-bold mb-5" x-text="editChannel.id ? '编辑渠道' : '添加渠道'"></h3>
+    <div class="space-y-4">
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">渠道名称</label>
+        <input x-model="editChannel.name" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="如：OpenAI 官方渠道">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">类型</label>
+        <select x-model="editChannel.channel_type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+          <option value="openai">OpenAI</option>
+          <option value="claude">Claude (Anthropic)</option>
+          <option value="azure">Azure OpenAI</option>
+          <option value="gemini">Gemini</option>
+          <option value="custom">自定义 (OpenAI 兼容)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">API Key</label>
+        <input x-model="editChannel.api_key" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" :placeholder="editChannel.id ? '不修改则留空' : 'sk-...'">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">Base URL</label>
+        <input x-model="editChannel.base_url" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="https://api.openai.com/v1">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">支持模型（逗号分隔）</label>
+        <input x-model="editChannel.supported_models" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="gpt-4o,gpt-4o-mini,gpt-3.5-turbo">
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="text-sm text-gray-400 mb-1 block">优先级</label>
+          <input type="number" x-model="editChannel.priority" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="text-sm text-gray-400 mb-1 block">权重</label>
+          <input type="number" x-model="editChannel.weight" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="text-sm text-gray-400 mb-1 block">超时(秒)</label>
+          <input type="number" x-model="editChannel.timeout" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+        </div>
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">模型映射 (可选JSON)</label>
+        <input x-model="editChannel.model_mapping" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-blue-500" placeholder='{"gpt-4":"gpt-4o"}'>
+      </div>
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button @click="showChannelModal=false" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm">取消</button>
+      <button @click="saveChannel()" :disabled="saving" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-semibold">
+        <span x-text="saving ? '保存中...' : '保存'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Token 弹窗 ─── -->
+<div x-show="showTokenModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-30 p-4" @click.self="showTokenModal=false">
+  <div class="bg-gray-900 rounded-2xl p-6 w-full max-w-md border border-gray-800">
+    <h3 class="text-lg font-bold mb-5">创建令牌</h3>
+
+    <!-- 创建成功后展示完整 Token -->
+    <div x-show="newTokenKey" class="mb-5 p-4 bg-green-900/30 border border-green-700 rounded-xl">
+      <p class="text-green-400 text-sm font-medium mb-2">✓ 令牌创建成功！请立即复制保存，此后不再显示</p>
+      <div class="flex items-center gap-2">
+        <code class="flex-1 text-green-300 text-xs font-mono break-all bg-gray-900 p-2 rounded" x-text="newTokenKey"></code>
+        <button @click="copyToken(newTokenKey)" class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded whitespace-nowrap">复制</button>
+      </div>
+    </div>
+
+    <div x-show="!newTokenKey" class="space-y-4">
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">令牌名称</label>
+        <input x-model="editToken.name" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="如：客户A的令牌">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">额度（美元，-1=无限）</label>
+        <input type="number" x-model="editToken.total_quota" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">限速（次/分钟）</label>
+        <input type="number" x-model="editToken.rate_limit" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">允许模型（逗号分隔，* 为全部）</label>
+        <input x-model="editToken.allowed_models" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="* 或 gpt-4o,gpt-4o-mini">
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 mb-1 block">有效天数（空=永不过期）</label>
+        <input type="number" x-model="editToken.expires_days" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500" placeholder="30">
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button @click="showTokenModal=false; newTokenKey=''" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg text-sm">
+        <span x-text="newTokenKey ? '关闭' : '取消'"></span>
+      </button>
+      <button x-show="!newTokenKey" @click="saveToken()" :disabled="saving" class="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-semibold">
+        <span x-text="saving ? '创建中...' : '创建令牌'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function app() {
+  return {
+    // 认证
+    authed: false,
+    loginToken: '',
+    loginLoading: false,
+    adminToken: '',
+
+    // 导航
+    currentTab: 'dashboard',
+    tabs: [
+      { id: 'dashboard', name: '仪表盘', icon: '📊' },
+      { id: 'channels', name: '渠道管理', icon: '🔗' },
+      { id: 'tokens', name: '令牌管理', icon: '🔑' },
+      { id: 'logs', name: '日志查询', icon: '📋' },
+    ],
+
+    // Toast
+    toasts: [],
+
+    // 仪表盘数据
+    statCards: [],
+    dailyStats: [],
+    dailyMax: 1,
+    modelStats: [],
+
+    // 渠道
+    channels: [],
+    showChannelModal: false,
+    editChannel: {},
+    saving: false,
+
+    // 令牌
+    tokens: [],
+    showTokenModal: false,
+    editToken: { total_quota: -1, rate_limit: 60, allowed_models: '*' },
+    newTokenKey: '',
+
+    // 日志
+    logs: [],
+    logTotal: 0,
+    logPage: 1,
+    logFilter: {},
+
+    // ─── 核心方法 ───
+
+    async init() {
+      const saved = localStorage.getItem('adminToken');
+      if (saved) {
+        this.adminToken = saved;
+        const ok = await this.verifyToken(saved);
+        if (ok) { this.authed = true; this.loadAll(); }
+      }
+      this.$watch('currentTab', tab => this.onTabChange(tab));
+    },
+
+    async verifyToken(token) {
+      try {
+        const r = await this.api('/admin/stats/overview', 'GET', null, token);
+        return r && !r.error;
+      } catch { return false; }
+    },
+
+    async doLogin() {
+      if (!this.loginToken) return;
+      this.loginLoading = true;
+      const ok = await this.verifyToken(this.loginToken);
+      if (ok) {
+        this.adminToken = this.loginToken;
+        localStorage.setItem('adminToken', this.loginToken);
+        this.authed = true;
+        this.loginToken = '';
+        this.loadAll();
+        this.toast('登录成功', 'success');
+      } else {
+        this.toast('Token 无效或权限不足', 'error');
+      }
+      this.loginLoading = false;
+    },
+
+    logout() {
+      localStorage.removeItem('adminToken');
+      this.authed = false;
+      this.adminToken = '';
+    },
+
+    onTabChange(tab) {
+      if (tab === 'dashboard') this.loadDashboard();
+      else if (tab === 'channels') this.loadChannels();
+      else if (tab === 'tokens') this.loadTokens();
+      else if (tab === 'logs') this.loadLogs();
+    },
+
+    loadAll() {
+      this.loadDashboard();
+      this.loadChannels();
+      this.loadTokens();
+    },
+
+    // ─── 仪表盘 ───
+
+    async loadDashboard() {
+      try {
+        const [overview, models, daily] = await Promise.all([
+          this.api('/admin/stats/overview'),
+          this.api('/admin/stats/models'),
+          this.api('/admin/stats/daily?days=30'),
+        ]);
+        this.statCards = [
+          { key: 'total_requests', label: '总请求数', value: overview.total_requests?.toLocaleString() ?? 0, sub: `今日 ${overview.today_requests ?? 0} 次` },
+          { key: 'total_cost', label: '总消费', value: '$' + (overview.total_cost ?? 0).toFixed(4), sub: `今日 $${(overview.today_cost ?? 0).toFixed(4)}` },
+          { key: 'active_channels', label: '活跃渠道', value: overview.active_channels ?? 0, sub: '' },
+          { key: 'active_tokens', label: '活跃令牌', value: overview.active_tokens ?? 0, sub: '' },
+          { key: 'today_requests', label: '今日请求', value: overview.today_requests ?? 0, sub: '' },
+          { key: 'today_cost', label: '今日消费', value: '$' + (overview.today_cost ?? 0).toFixed(6), sub: '' },
+        ];
+        this.modelStats = Array.isArray(models) ? models : [];
+        this.dailyStats = Array.isArray(daily) ? daily : [];
+        this.dailyMax = Math.max(1, ...this.dailyStats.map(d => d.request_count));
+      } catch (e) { this.toast('加载仪表盘失败', 'error'); }
+    },
+
+    // ─── 渠道 ───
+
+    async loadChannels() {
+      try {
+        const r = await this.api('/admin/channels');
+        this.channels = r.data ?? [];
+      } catch { this.toast('加载渠道失败', 'error'); }
+    },
+
+    openChannelModal(ch = null) {
+      this.editChannel = ch
+        ? { ...ch, api_key: '' }
+        : { channel_type: 'openai', priority: 0, weight: 1, timeout: 120, max_retries: 2 };
+      this.showChannelModal = true;
+    },
+
+    async saveChannel() {
+      this.saving = true;
+      try {
+        if (this.editChannel.id) {
+          const payload = { ...this.editChannel };
+          if (!payload.api_key) delete payload.api_key;
+          await this.api(`/admin/channels/${this.editChannel.id}`, 'PUT', payload);
+          this.toast('渠道更新成功', 'success');
+        } else {
+          await this.api('/admin/channels', 'POST', this.editChannel);
+          this.toast('渠道添加成功', 'success');
+        }
+        this.showChannelModal = false;
+        this.loadChannels();
+      } catch (e) { this.toast(e.message || '保存失败', 'error'); }
+      this.saving = false;
+    },
+
+    async toggleChannel(ch) {
+      await this.api(`/admin/channels/${ch.id}`, 'PUT', { status: ch.status === 1 ? 0 : 1 });
+      this.loadChannels();
+    },
+
+    async deleteChannel(ch) {
+      if (!confirm(`确认删除渠道「${ch.name}」？`)) return;
+      await this.api(`/admin/channels/${ch.id}`, 'DELETE');
+      this.toast('渠道已删除', 'success');
+      this.loadChannels();
+    },
+
+    async testChannel(ch) {
+      this.toast('正在测试...', 'info');
+      try {
+        const r = await this.api(`/admin/channels/${ch.id}/test`, 'POST');
+        this.toast(r.success ? `测试成功: ${r.message}` : `测试失败: ${r.message}`, r.success ? 'success' : 'error');
+        this.loadChannels();
+      } catch (e) { this.toast('测试请求失败', 'error'); }
+    },
+
+    // ─── 令牌 ───
+
+    async loadTokens() {
+      try {
+        const r = await this.api('/admin/tokens');
+        this.tokens = r.data ?? [];
+      } catch { this.toast('加载令牌失败', 'error'); }
+    },
+
+    openTokenModal() {
+      this.editToken = { total_quota: -1, rate_limit: 60, allowed_models: '*', user_id: 1 };
+      this.newTokenKey = '';
+      this.showTokenModal = true;
+    },
+
+    async saveToken() {
+      this.saving = true;
+      try {
+        const r = await this.api('/admin/tokens', 'POST', this.editToken);
+        this.newTokenKey = r.token_key;
+        this.toast('令牌创建成功！', 'success');
+        this.loadTokens();
+      } catch (e) { this.toast(e.message || '创建失败', 'error'); }
+      this.saving = false;
+    },
+
+    async toggleToken(tk) {
+      await this.api(`/admin/tokens/${tk.id}`, 'PUT', { status: tk.status === 1 ? 0 : 1 });
+      this.loadTokens();
+    },
+
+    async deleteToken(tk) {
+      if (!confirm(`确认删除令牌「${tk.name}」？`)) return;
+      await this.api(`/admin/tokens/${tk.id}`, 'DELETE');
+      this.toast('令牌已删除', 'success');
+      this.loadTokens();
+    },
+
+    copyToken(key) {
+      navigator.clipboard.writeText(key).then(() => this.toast('已复制到剪贴板', 'success'));
+    },
+
+    // ─── 日志 ───
+
+    async loadLogs() {
+      try {
+        let params = `page=${this.logPage}&size=20`;
+        if (this.logFilter.model) params += `&model=${this.logFilter.model}`;
+        if (this.logFilter.start_time) params += `&start_time=${this.logFilter.start_time}`;
+        if (this.logFilter.end_time) params += `&end_time=${this.logFilter.end_time}`;
+        const r = await this.api(`/admin/logs?${params}`);
+        this.logs = r.data ?? [];
+        this.logTotal = r.total ?? 0;
+      } catch { this.toast('加载日志失败', 'error'); }
+    },
+
+    // ─── 工具方法 ───
+
+    async api(path, method = 'GET', body = null, token = null) {
+      const res = await fetch(path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token ?? this.adminToken}`,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data?.detail?.error?.message || data?.detail || `HTTP ${res.status}`;
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      }
+      return data;
+    },
+
+    toast(msg, type = 'info') {
+      const id = Date.now();
+      this.toasts.push({ id, msg, type });
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 3500);
+    },
+
+    formatTime(ts) {
+      if (!ts) return '—';
+      return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+    },
+  };
+}
+</script>
+</body>
+</html>

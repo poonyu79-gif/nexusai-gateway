@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: ai-api-proxy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=mysql+pymysql://proxy:proxy_pass@mysql:3306/apiproxy
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./data:/app/data
+    networks:
+      - proxy-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mysql:
+    image: mysql:8.0
+    container_name: ai-api-proxy-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_change_me
+      MYSQL_DATABASE: apiproxy
+      MYSQL_USER: proxy
+      MYSQL_PASSWORD: proxy_pass
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - proxy-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "proxy", "-pproxy_pass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-api-proxy-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - proxy-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: ai-api-proxy-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # SSL 证书挂载（使用时取消注释）
+      # - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      # - ./ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+    depends_on:
+      - app
+    networks:
+      - proxy-net
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  proxy-net:
+    driver: bridge
