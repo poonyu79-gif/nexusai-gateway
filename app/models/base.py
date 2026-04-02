@@ -2,6 +2,7 @@
 数据库引擎、Session工厂、基类 Base
 支持 SQLite（开发）和 MySQL（生产）
 """
+import os
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from sqlalchemy.pool import StaticPool
@@ -15,9 +16,33 @@ class Base(DeclarativeBase):
     pass
 
 
+def _ensure_sqlite_dir(db_url: str):
+    """确保 SQLite 数据库文件所在目录存在"""
+    # sqlite:////data/proxy.db  →  /data/proxy.db
+    # sqlite:///proxy.db        →  proxy.db (相对路径)
+    if "///" not in db_url:
+        return
+    path = db_url.split("///", 1)[1]
+    if not path or path == ":memory:":
+        return
+    directory = os.path.dirname(os.path.abspath(path))
+    if directory and not os.path.exists(directory):
+        try:
+            os.makedirs(directory, exist_ok=True)
+            logger.info(f"创建数据库目录: {directory}")
+        except OSError as e:
+            logger.warning(f"无法创建目录 {directory}: {e}，降级使用 /tmp/proxy.db")
+            # 降级到 /tmp，Render 免费层保证可写
+            return "sqlite:////tmp/proxy.db"
+    return db_url
+
+
 def _get_engine():
     db_url = settings.database_url
     if db_url.startswith("sqlite"):
+        fixed = _ensure_sqlite_dir(db_url)
+        if fixed and fixed != db_url:
+            db_url = fixed
         # SQLite 需要特殊配置以支持多线程
         engine = create_engine(
             db_url,
