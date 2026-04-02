@@ -5,21 +5,17 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     plan: free
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
-        value: sqlite:////data/proxy.db
+        value: sqlite:////tmp/proxy.db
       - key: SECRET_KEY
         generateValue: true
       - key: ADMIN_USERNAME
         value: admin
       - key: ADMIN_PASSWORD
-        sync: false       # 在 Render 控制台手动填写
+        sync: false
       - key: USDT_TRC20_ADDRESS
-        sync: false       # 在 Render 控制台手动填写
+        sync: false
       - key: USDT_ERC20_ADDRESS
         sync: false
       - key: USDT_TO_USD_RATE
